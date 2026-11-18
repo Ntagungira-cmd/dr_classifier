@@ -1,0 +1,28 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+.DS_Store
+.env
+*.sqlite3
+data/uploads.db
+data/raw/
+data/uploads/
+data/full/
+locust_results/
+!data/train/.gitkeep
+!data/test/.gitkeep
+# Keep trained model in repo (assignment requires .h5/.tf)
+# models/*.h5
+models/*.keras
+models/*.tflite
+!models/.gitkeep
+!models/diabetic_retinopathy_mobilenet.h5
+!models/metrics.json
+*.log
+.ipynb_checkpoints/
+locust_results/
+.pytest_cache/
+.mypy_cache/
+render.yaml.bak
