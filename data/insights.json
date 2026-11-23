@@ -1,0 +1,36 @@
+{
+  "class_distribution": {
+    "No_DR": 50,
+    "Mild": 50,
+    "Moderate": 50,
+    "Severe": 50,
+    "Proliferate_DR": 50
+  },
+  "mean_brightness_by_class": {
+    "No_DR": 67.98053089141845,
+    "Mild": 68.22190010070801,
+    "Moderate": 69.60056678771973,
+    "Severe": 64.94631187438965,
+    "Proliferate_DR": 67.8481288909912
+  },
+  "mean_green_channel_by_class": {
+    "No_DR": 57.73221460459184,
+    "Mild": 54.88410235969387,
+    "Moderate": 58.58794523278062,
+    "Severe": 55.20827806122448,
+    "Proliferate_DR": 56.91950932716837
+  },
+  "mean_sharpness_by_class": {
+    "No_DR": 299.0065449523926,
+    "Mild": 253.4354750061035,
+    "Moderate": 271.6473066711426,
+    "Severe": 236.90058067321777,
+    "Proliferate_DR": 259.75906959533694
+  },
+  "interpretations": {
+    "class_distribution": "Class counts show screening skew: No_DR usually dominates. That imbalance is why we use class weights / careful metrics (not accuracy alone) when judging model quality.",
+    "mean_brightness_by_class": "Average luminance by grade reflects acquisition conditions (underexposure / overexposure). Systematic brightness shifts can mimic pathology cues, so Gaussian filtering + normalization stabilize training across clinics.",
+    "mean_green_channel_by_class": "The green channel carries most vessel/lesion contrast in fundus photos. Higher green means by severity often track hemorrhages and exudates becoming more visible \u2014 a clinically meaningful image feature for DR grading.",
+    "mean_sharpness_by_class": "Laplacian sharpness summarizes focus quality. Soft/blurry frames are harder to grade; sharpness gaps across classes warn that the model may be learning camera quality as a shortcut."
+  }
+}
