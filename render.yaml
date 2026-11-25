@@ -1,0 +1,11 @@
+# Render Blueprint — free web service for the FastAPI API
+services:
+  - type: web
+    name: dr-mlops-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONPATH
+        value: /app
+    dockerCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
