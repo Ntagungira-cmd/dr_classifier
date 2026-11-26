@@ -25,11 +25,16 @@ Two public fundus datasets, both graded on the same 5-level ICDR scale:
 | Dataset | Images | Source | Role |
 |---------|--------|--------|------|
 | **APTOS 2019** | 3,662 (224×224) | HF mirror `bumbledeep/aptos` of [Diabetic Retinopathy 224×224 Gaussian Filtered (Kaggle)](https://www.kaggle.com/datasets/sovitrath/diabetic-retinopathy-224x224-gaussian-filtered) | Primary dataset: training + the main held-out test set |
-| **EyePACS** | 35,108 (~1024px) | Kaggle 2015 *Diabetic Retinopathy Detection* (preprocessed images + `trainLabels.csv`) | Extra training data from different cameras/clinics + a second held-out test set |
+| **EyePACS** | 35,108 (~1024px) | Hugging Face [`ctmedtech/EYEPACS`](https://huggingface.co/datasets/ctmedtech/EYEPACS) (`EYEPACS.zip` + `trainLabels.csv`), a re-host of the labelled training set from Kaggle's 2015 [*Diabetic Retinopathy Detection*](https://www.kaggle.com/c/diabetic-retinopathy-detection) | Extra training data from different cameras/clinics + a second held-out test set |
 
 The full split (85/15 per class for APTOS; patient-level 85/15 for EyePACS so a person's left and right eye never straddle train/test), the folder layout, and exactly which images were used for what are documented in **[`data/README.md`](data/README.md)**. Gaussian filtering is applied in `src/preprocessing.py` to every image at train and predict time.
 
-Citations: Karthik, Maggie, and Sohier Dane. *APTOS 2019 Blindness Detection*. Kaggle. — Cuadros J, Bresnick G. *EyePACS: An Adaptable Telemedicine System for Diabetic Retinopathy Screening*. J Diabetes Sci Technol. 2009; Kaggle *Diabetic Retinopathy Detection* (2015).
+**Citations**
+
+- APTOS: Karthik, Maggie, and Sohier Dane. *APTOS 2019 Blindness Detection*. Kaggle.
+- EyePACS (as requested by the dataset card): Kaggle and EyePACS. "Diabetic Retinopathy Detection." Kaggle Competition, 2015. https://www.kaggle.com/c/diabetic-retinopathy-detection. Accessed via Hugging Face: [`ctmedtech/EYEPACS`](https://huggingface.co/datasets/ctmedtech/EYEPACS).
+
+**License note:** the EyePACS dataset card says use is restricted under Kaggle and EyePACS terms, and redistribution may be restricted. This repo does **not** include any EyePACS images (`data/raw/` and `data/splits/` are gitignored). Anyone reproducing the results downloads EyePACS themselves under those terms.
 
 ## Project structure
 
@@ -64,8 +69,9 @@ pip install -r requirements.txt
 # 1) Download APTOS into data/raw/aptos/ (+ small demo samples in data/samples/)
 python scripts/download_data.py
 
-# 2) EyePACS (manual, needs a Kaggle account): put the images in
-#    data/raw/eyepacs/images/ and trainLabels.csv in data/raw/eyepacs/
+# 2) EyePACS (manual): download EYEPACS.zip + trainLabels.csv from
+#    https://huggingface.co/datasets/ctmedtech/EYEPACS, unzip the images into
+#    data/raw/eyepacs/images/ and put trainLabels.csv in data/raw/eyepacs/
 
 # 3) Build the train/test splits in data/splits/ (deterministic, seed 42)
 python scripts/build_combined.py
