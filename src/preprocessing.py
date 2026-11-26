@@ -45,6 +45,18 @@ def load_image_rgb(source: Union[str, Path, bytes, np.ndarray]) -> np.ndarray:
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
+def validate_image_bytes(data: bytes) -> None:
+    """Raise ValueError unless ``data`` decodes to an image the pipeline can use."""
+    if not data:
+        raise ValueError("file is empty")
+    try:
+        img = load_image_rgb(data)
+    except ValueError:
+        raise ValueError("not a readable image (expected a JPG or PNG fundus photo)") from None
+    if img.ndim != 3 or img.shape[2] != 3 or min(img.shape[:2]) < 1:
+        raise ValueError("image has an unsupported shape")
+
+
 def preprocess_image(
     source: Union[str, Path, bytes, np.ndarray],
     *,

@@ -27,16 +27,26 @@ st.set_page_config(
 )
 
 
+class APIError(Exception):
+    """API call failed; message is the API's own `detail` when it sent one."""
+
+
+def _check(r: requests.Response):
+    if r.ok:
+        return r.json()
+    try:
+        detail = r.json().get("detail")
+    except ValueError:
+        detail = None
+    raise APIError(detail if isinstance(detail, str) else f"{r.status_code} {r.reason}: {r.text[:300]}")
+
+
 def api_get(path: str, timeout: float = 10):
-    r = requests.get(f"{API_URL}{path}", timeout=timeout)
-    r.raise_for_status()
-    return r.json()
+    return _check(requests.get(f"{API_URL}{path}", timeout=timeout))
 
 
 def api_post(path: str, **kwargs):
-    r = requests.post(f"{API_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs)
-    r.raise_for_status()
-    return r.json()
+    return _check(requests.post(f"{API_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs))
 
 
 st.title("Diabetic Retinopathy MLOps")
@@ -98,15 +108,9 @@ with tab_upload:
     if files and st.button("Save to database"):
         multipart = [("files", (f.name, f.getvalue(), f.type or "image/jpeg")) for f in files]
         try:
-            saved = requests.post(
-                f"{API_URL}/upload",
-                files=multipart,
-                data={"labels": labels_str},
-                timeout=120,
-            )
-            saved.raise_for_status()
-            st.success(f"Stored {len(saved.json())} images in SQLite")
-            st.json(saved.json())
+            saved = api_post("/upload", files=multipart, data={"labels": labels_str}, timeout=120)
+            st.success(f"Stored {len(saved)} images in SQLite")
+            st.json(saved)
         except Exception as exc:
             st.error(exc)
 
@@ -185,6 +189,9 @@ with tab_retrain:
                     timeout=600,
                 )
                 st.success("Retrain finished")
+                skipped = result.get("metrics", {}).get("skipped") or []
+                if skipped:
+                    st.warning("Skipped unreadable uploads: " + ", ".join(skipped))
                 st.json(result)
             except Exception as exc:
                 st.error(exc)

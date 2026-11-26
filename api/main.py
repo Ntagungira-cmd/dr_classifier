@@ -21,6 +21,7 @@ from src.config import CLASS_NAMES, MODEL_PATH
 from src.db import init_db, list_uploads, save_upload, upload_counts_by_label
 from src.insights import load_insights
 from src.prediction import clear_model_cache, predict_image
+from src.preprocessing import validate_image_bytes
 from src.retrain import run_retrain
 
 STARTED_AT = datetime.now(timezone.utc)
@@ -109,20 +110,28 @@ async def upload(
     files: List[UploadFile] = File(...),
     labels: str = Form(..., description="Comma-separated labels 0-4, one per file"),
 ):
-    label_list = [int(x.strip()) for x in labels.split(",") if x.strip() != ""]
+    try:
+        label_list = [int(x.strip()) for x in labels.split(",") if x.strip() != ""]
+    except ValueError:
+        raise HTTPException(400, f"Labels must be comma-separated numbers 0-4; got {labels!r}")
     if len(label_list) != len(files):
         raise HTTPException(
             400,
             f"labels count ({len(label_list)}) must match files ({len(files)})",
         )
-    saved = []
+    # Validate the whole batch before saving anything
+    batch = []
     for f, label in zip(files, label_list):
+        name = f.filename or "image.jpg"
         if label not in CLASS_NAMES:
-            raise HTTPException(400, f"Invalid label {label}; expected 0-4")
+            raise HTTPException(400, f"{name}: invalid label {label}; expected 0-4")
         data = await f.read()
-        row = save_upload(f.filename or "image.jpg", label, data)
-        saved.append(UploadItem(**row))
-    return saved
+        try:
+            validate_image_bytes(data)
+        except ValueError as exc:
+            raise HTTPException(400, f"{name}: {exc}. Nothing was saved.") from exc
+        batch.append((name, label, data))
+    return [UploadItem(**save_upload(name, label, data)) for name, label, data in batch]
 
 
 @app.get("/uploads")
