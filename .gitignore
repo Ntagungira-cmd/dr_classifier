@@ -10,7 +10,8 @@ data/splits/
 data/uploads.db
 data/raw/
 data/uploads/
-locust_results/
+locust_results/*
+!locust_results/api[123]_stats.csv
 # Keep trained model in repo (assignment requires .h5/.tf)
 # models/*.h5
 models/*.keras
@@ -20,7 +21,6 @@ models/*.tflite
 !models/metrics.json
 *.log
 .ipynb_checkpoints/
-locust_results/
 .pytest_cache/
 .mypy_cache/
 render.yaml.bak
