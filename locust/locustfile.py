@@ -9,10 +9,10 @@ from locust import HttpUser, between, task
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_CANDIDATES = [
-    ROOT / "data" / "test" / "No_DR",
-    ROOT / "data" / "train" / "No_DR",
-    ROOT / "data" / "test" / "Mild",
-    ROOT / "data" / "train" / "Mild",
+    ROOT / "data" / "samples" / "test" / "No_DR",
+    ROOT / "data" / "samples" / "train" / "No_DR",
+    ROOT / "data" / "samples" / "test" / "Mild",
+    ROOT / "data" / "samples" / "train" / "Mild",
 ]
 
 
@@ -25,7 +25,7 @@ def _sample_image() -> Path:
             files = list(folder.glob("*"))
             if files:
                 return files[0]
-    raise FileNotFoundError("No sample image found under data/train or data/test")
+    raise FileNotFoundError("No sample image found under data/samples/train or data/samples/test")
 
 
 SAMPLE = _sample_image()

@@ -19,7 +19,7 @@ from src.insights import compute_insights
 
 def main():
     sample_dirs = list(TRAIN_DIR.glob("*"))
-    assert sample_dirs, "data/train empty — run scripts/download_data.py"
+    assert sample_dirs, "data/samples/train empty — run scripts/download_data.py"
     sample = next(TRAIN_DIR.joinpath(CLASS_NAMES[0]).glob("*"))
     tensor = preprocess_image(sample)
     assert tensor.shape == (224, 224, 3), tensor.shape

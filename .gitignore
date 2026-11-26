@@ -6,13 +6,11 @@ __pycache__/
 .DS_Store
 .env
 *.sqlite3
+data/splits/
 data/uploads.db
 data/raw/
 data/uploads/
-data/full/
 locust_results/
-!data/train/.gitkeep
-!data/test/.gitkeep
 # Keep trained model in repo (assignment requires .h5/.tf)
 # models/*.h5
 models/*.keras
@@ -26,3 +24,4 @@ locust_results/
 .pytest_cache/
 .mypy_cache/
 render.yaml.bak
+models/experiments/

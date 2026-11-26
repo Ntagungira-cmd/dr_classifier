@@ -1,0 +1,13 @@
+# Keep the Docker build context small; data/ and models/ are mounted as volumes at runtime
+.git
+.venv
+venv
+__pycache__
+*.pyc
+data/raw/
+data/splits/
+data/uploads/
+data/uploads.db
+models/experiments/
+locust_results/
+notebook/.ipynb_checkpoints

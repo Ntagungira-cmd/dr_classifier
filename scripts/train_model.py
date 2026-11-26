@@ -19,6 +19,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from tensorflow import keras
+from tensorflow.keras import layers
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -45,6 +46,48 @@ def load_dir(root: Path):
     return np.stack(xs), np.array(ys, dtype=np.int32)
 
 
+def augmenter(seed: int = SEED) -> keras.Sequential:
+    """Train-time only. Fundus photos have no canonical orientation, so flips and
+    full rotations are label-preserving; zoom/brightness/contrast mimic camera variation."""
+    return keras.Sequential(
+        [
+            layers.RandomFlip("horizontal_and_vertical", seed=seed),
+            layers.RandomRotation(0.5, fill_mode="constant", fill_value=0.0, seed=seed),
+            layers.RandomZoom((-0.1, 0.1), fill_mode="constant", fill_value=0.0, seed=seed),
+            layers.RandomBrightness(0.1, value_range=(0.0, 1.0), seed=seed),
+            layers.RandomContrast(0.1, seed=seed),
+        ],
+        name="augment",
+    )
+
+
+class AugmentedBatches(keras.utils.PyDataset):
+    """Shuffled, augmented batches from in-memory arrays (avoids tf.data's 2 GB constant limit).
+
+    Class weights are passed as per-sample weights so imbalance handling matches the
+    non-augmented path.
+    """
+
+    def __init__(self, x, y, batch_size, weights, seed=SEED, **kwargs):
+        super().__init__(**kwargs)
+        self.x, self.y, self.batch_size = x, y, batch_size
+        self.sample_w = np.array([weights[int(c)] for c in y], dtype=np.float32)
+        self.aug = augmenter(seed)
+        self.rng = np.random.default_rng(seed)
+        self.order = self.rng.permutation(len(x))
+
+    def __len__(self):
+        return int(np.ceil(len(self.x) / self.batch_size))
+
+    def __getitem__(self, i):
+        idx = self.order[i * self.batch_size : (i + 1) * self.batch_size]
+        xb = np.clip(np.asarray(self.aug(self.x[idx], training=True)), 0.0, 1.0)
+        return xb, self.y[idx], self.sample_w[idx]
+
+    def on_epoch_end(self):
+        self.order = self.rng.permutation(len(self.x))
+
+
 def class_weights(y: np.ndarray) -> dict:
     counts = Counter(y.tolist())
     total = len(y)
@@ -63,7 +106,18 @@ def main():
     parser.add_argument("--epochs-ft", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-per-class", type=int, default=0, help="0 = all")
+    parser.add_argument("--patience", type=int, default=3, help="early-stopping patience in epochs (LR halves after patience//2)")
+    parser.add_argument("--augment", action="store_true", help="random flips/rotation/zoom/brightness/contrast on training batches")
+    parser.add_argument("--out", type=Path, default=MODEL_PATH, help="where to save the .h5")
+    parser.add_argument(
+        "--metrics-out", type=Path, default=None,
+        help="metrics JSON path (default: models/metrics.json, or <out>.metrics.json when --out is set)",
+    )
     args = parser.parse_args()
+    # Experiments (custom --out) must not touch production metrics or the insights cache
+    is_production = args.out.resolve() == MODEL_PATH.resolve()
+    if args.metrics_out is None:
+        args.metrics_out = ROOT / "models" / "metrics.json" if is_production else args.out.with_suffix(".metrics.json")
 
     x, y = load_dir(args.data)
     if args.max_per_class:
@@ -80,25 +134,27 @@ def main():
     )
     weights = class_weights(y_train)
     print("class_weights", weights)
+    if args.augment:
+        print("augmentation: on")
+        train_data = dict(x=AugmentedBatches(x_train, y_train, args.batch_size, weights))
+    else:
+        train_data = dict(x=x_train, y=y_train, batch_size=args.batch_size, class_weight=weights)
 
     model = build_model(trainable_base=False)
     compile_model(model, learning_rate=1e-3)
 
     callbacks = [
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=3, restore_best_weights=True
+            monitor="val_loss", patience=args.patience, restore_best_weights=True
         ),
-        keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2),
+        keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=max(2, args.patience // 2)),
     ]
 
     print("=== Phase 1: frozen backbone ===")
     model.fit(
-        x_train,
-        y_train,
+        **train_data,
         validation_data=(x_val, y_val),
         epochs=args.epochs_head,
-        batch_size=args.batch_size,
-        class_weight=weights,
         callbacks=callbacks,
         verbose=1,
     )
@@ -107,18 +163,16 @@ def main():
     unfreeze_top(model, n_layers=40)
     compile_model(model, learning_rate=1e-5)
     history = model.fit(
-        x_train,
-        y_train,
+        **train_data,
         validation_data=(x_val, y_val),
         epochs=args.epochs_ft,
-        batch_size=args.batch_size,
-        class_weight=weights,
         callbacks=callbacks,
         verbose=1,
     )
 
-    save_model(model, MODEL_PATH)
-    print(f"Saved {MODEL_PATH}")
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    save_model(model, args.out)
+    print(f"Saved {args.out}")
 
     probs = model.predict(x_val, verbose=0)
     y_pred = probs.argmax(axis=1)
@@ -136,12 +190,12 @@ def main():
             output_dict=True,
         ),
     }
-    metrics_path = ROOT / "models" / "metrics.json"
-    metrics_path.write_text(json.dumps(metrics, indent=2))
+    args.metrics_out.write_text(json.dumps(metrics, indent=2))
     print(json.dumps({k: metrics[k] for k in ("accuracy", "precision_macro", "recall_macro", "f1_macro", "val_loss")}, indent=2))
 
-    compute_insights(TRAIN_DIR if TRAIN_DIR.exists() else args.data)
-    print("insights cached")
+    if is_production:
+        compute_insights(TRAIN_DIR if TRAIN_DIR.exists() else args.data)
+        print("insights cached")
 
 
 if __name__ == "__main__":

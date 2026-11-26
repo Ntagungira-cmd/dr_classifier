@@ -17,17 +17,19 @@ Deployed on AWS EC2 (eu-north-1) with the same Docker Compose stack:
 
 > Local UI: `http://localhost:8501`
 
-## Dataset
+## Datasets
 
-Primary reference (assignment choice after survey of newer PhysioNet/IEEE options):
+Two public fundus datasets, both graded on the same 5-level ICDR scale:
+**`0 No_DR`, `1 Mild`, `2 Moderate`, `3 Severe`, `4 Proliferate_DR`**.
 
-- [Diabetic Retinopathy 224×224 Gaussian Filtered (Kaggle)](https://www.kaggle.com/datasets/sovitrath/diabetic-retinopathy-224x224-gaussian-filtered)
+| Dataset | Images | Source | Role |
+|---------|--------|--------|------|
+| **APTOS 2019** | 3,662 (224×224) | HF mirror `bumbledeep/aptos` of [Diabetic Retinopathy 224×224 Gaussian Filtered (Kaggle)](https://www.kaggle.com/datasets/sovitrath/diabetic-retinopathy-224x224-gaussian-filtered) | Primary dataset: training + the main held-out test set |
+| **EyePACS** | 35,108 (~1024px) | Kaggle 2015 *Diabetic Retinopathy Detection* (preprocessed images + `trainLabels.csv`) | Extra training data from different cameras/clinics + a second held-out test set |
 
-Download path used in this repo (open HF mirror of APTOS 224×224): `bumbledeep/aptos`. Gaussian filtering is applied in `src/preprocessing.py` to match the Kaggle variant.
+The full split (85/15 per class for APTOS; patient-level 85/15 for EyePACS so a person's left and right eye never straddle train/test), the folder layout, and exactly which images were used for what are documented in **[`data/README.md`](data/README.md)**. Gaussian filtering is applied in `src/preprocessing.py` to every image at train and predict time.
 
-**Labels (ICDR):** `0 No_DR`, `1 Mild`, `2 Moderate`, `3 Severe`, `4 Proliferate_DR`
-
-Citation: Karthik, Maggie, and Sohier Dane. APTOS 2019 Blindness Detection. Kaggle.
+Citations: Karthik, Maggie, and Sohier Dane. *APTOS 2019 Blindness Detection*. Kaggle. — Cuadros J, Bresnick G. *EyePACS: An Adaptable Telemedicine System for Diabetic Retinopathy Screening*. J Diabetes Sci Technol. 2009; Kaggle *Diabetic Retinopathy Detection* (2015).
 
 ## Project structure
 
@@ -38,8 +40,14 @@ mlp-summative/
 ├── src/preprocessing.py | model.py | prediction.py | retrain.py | db.py | insights.py
 ├── api/main.py
 ├── ui/app.py
-├── data/train/ | test/ | uploads/
-├── models/diabetic_retinopathy_mobilenet.h5
+├── scripts/download_data.py | build_combined.py | train_model.py | evaluate.py | smoke_test.py
+├── data/
+│   ├── README.md            # dataset guide: what each folder is and how it was used
+│   ├── raw/aptos/ | raw/eyepacs/        # source datasets (gitignored)
+│   ├── splits/              # generated train/test splits (gitignored)
+│   ├── samples/train/ | samples/test/   # small tracked demo sets (UI charts, Locust)
+│   └── uploads/ + uploads.db            # images uploaded for retraining (runtime)
+├── models/diabetic_retinopathy_mobilenet.h5 | metrics.json
 ├── locust/locustfile.py
 ├── docker-compose.yml
 └── Dockerfile
@@ -53,13 +61,22 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 1) Download APTOS 224x224 + create train/test sample
+# 1) Download APTOS into data/raw/aptos/ (+ small demo samples in data/samples/)
 python scripts/download_data.py
 
-# 2) Train MobileNetV2 (uses data/full if present)
-python scripts/train_model.py --max-per-class 200
+# 2) EyePACS (manual, needs a Kaggle account): put the images in
+#    data/raw/eyepacs/images/ and trainLabels.csv in data/raw/eyepacs/
 
-# 3) Run API + UI locally
+# 3) Build the train/test splits in data/splits/ (deterministic, seed 42)
+python scripts/build_combined.py
+
+# 4) Train the deployed model and score it on the held-out test sets
+python scripts/train_model.py --data data/splits/mixed_train --augment \
+    --epochs-head 10 --epochs-ft 20 --patience 6
+python scripts/evaluate.py --model deployed=models/diabetic_retinopathy_mobilenet.h5 \
+    --test aptos=data/splits/aptos_test --test eyepacs=data/splits/eyepacs_test
+
+# 5) Run API + UI locally
 uvicorn api.main:app --reload --port 8000
 # other terminal
 API_URL=http://localhost:8000 streamlit run ui/app.py
@@ -122,9 +139,55 @@ Local baseline (1 API process, Locust headless, 10 users, 20s):
 
 CSV outputs land in `locust_results/`. Re-run the scale matrix on your machine after `docker compose up --scale api=N`.
 
-### Offline model metrics (validation)
+## Model
 
-From `models/metrics.json` (MobileNetV2, APTOS 224 subset): Accuracy ≈ **0.63**, Precision (macro) ≈ **0.61**, Recall (macro) ≈ **0.60**, F1 (macro) ≈ **0.60**, Loss ≈ **0.95**. No_DR F1 ≈ **0.92** (use a No_DR sample for a clear demo prediction).
+**Deployed:** MobileNetV2 (ImageNet weights), fine-tuned on **all APTOS training images + 2,000 EyePACS images (400 per class)**, with train-time augmentation (random flips, full rotation, ±10 % zoom, brightness/contrast) — 10 frozen-backbone epochs + 20 fine-tune epochs, early-stopping patience 6. Trained on `data/splits/mixed_train` (5,112 images, 20 % held out for validation).
+
+### Held-out test results
+
+Scored on images **never used for training or validation** (from `models/metrics.json`):
+
+| Test set | Images | Accuracy | Precision (macro) | Recall (macro) | **F1 (macro)** |
+|----------|--------|----------|-------------------|----------------|----------------|
+| APTOS test | 550 | **0.745** | 0.546 | 0.546 | **0.543** |
+| EyePACS test (other cameras) | 300 | 0.420 | 0.354 | 0.420 | 0.369 |
+
+Per-class F1:
+
+| Test set | No_DR | Mild | Moderate | Severe | Proliferate_DR |
+|----------|-------|------|----------|--------|----------------|
+| APTOS | 0.96 | 0.57 | 0.62 | 0.19 | 0.38 |
+| EyePACS | 0.32 | 0.45 | 0.00 | 0.42 | 0.66 |
+
+Severe is the hardest grade: most missed Severe cases are predicted as Moderate (still a "refer to specialist" grade in DR screening), and only 1 of 29 APTOS Severe test images is predicted No_DR. Severe has just 29 APTOS test images, so its score is noisy.
+
+### How it compares with the previous model
+
+The previous model (APTOS only, 400 images per class, no augmentation) reported **F1 ≈ 0.60** in this README, but that number was inflated: its validation images were reused for testing, and many of the old `data/test` images were in its training set. Compared fairly on images neither model saw:
+
+| | Previous model | **Deployed model** |
+|---|---|---|
+| Unseen APTOS test images (304 No_DR + Moderate) — accuracy | 0.793 | **0.852** |
+| &nbsp;&nbsp;Moderate correctly graded | 45 / 93 | **54 / 93** |
+| EyePACS test (300) — accuracy / macro F1 | 0.263 / 0.185 | **0.420 / 0.369** |
+| EyePACS Severe F1 | 0.000 | **0.417** |
+
+### Experiments
+
+All models scored on the same held-out test sets (`scripts/evaluate.py`):
+
+| Training data | Augment | Epochs (max) | APTOS F1 | EyePACS F1 |
+|---------------|---------|--------------|----------|------------|
+| APTOS, 400/class (previous recipe) | – | 10 | 0.513 | 0.177 |
+| APTOS, all | – | 20 | 0.538 | 0.172 |
+| APTOS, all | ✓ | 30 | 0.451 | 0.136 |
+| APTOS + EyePACS, 400/class | – | 10 | 0.501 | 0.309 |
+| APTOS all + EyePACS | – | 20 | 0.520 | 0.329 |
+| **APTOS all + EyePACS (deployed)** | ✓ | 30 | **0.543** | **0.369** |
+
+Findings: using all APTOS images helps; EyePACS only pays off with augmentation and a longer training budget, after which it matches the best APTOS-only model on APTOS while doubling performance on images from other cameras. Single training run per setting, so differences under ~0.02 F1 are within noise.
+
+> `scripts/train_model.py` writes **validation** metrics to `models/metrics.json` when it trains the production model; the committed file holds the held-out **test** results above.
 
 ## Deploy on AWS (EC2 + Docker Compose)
 
