@@ -10,7 +10,11 @@ Bridges the Intro-to-ML summative (diabetic patient outcomes) into an **image** 
 
 ## Live URL
 
-> Render API: _[add after deploy]_  
+Deployed on AWS EC2 (eu-north-1) with the same Docker Compose stack:
+
+- **UI (Streamlit):** http://51.20.133.231:8501
+- **API (via nginx):** http://51.20.133.231:8000 — Swagger at http://51.20.133.231:8000/docs
+
 > Local UI: `http://localhost:8501`
 
 ## Dataset
@@ -122,13 +126,35 @@ CSV outputs land in `locust_results/`. Re-run the scale matrix on your machine a
 
 From `models/metrics.json` (MobileNetV2, APTOS 224 subset): Accuracy ≈ **0.63**, Precision (macro) ≈ **0.61**, Recall (macro) ≈ **0.60**, F1 (macro) ≈ **0.60**, Loss ≈ **0.95**. No_DR F1 ≈ **0.92** (use a No_DR sample for a clear demo prediction).
 
-## Deploy on Render (free)
+## Deploy on AWS (EC2 + Docker Compose)
 
-1. Push this repo to GitHub
-2. New Web Service → Docker → select repo
-3. Or use `render.yaml` Blueprint
-4. Ensure `models/diabetic_retinopathy_mobilenet.h5` is in the image or mounted
-5. Free tier spins down after ~15 min idle; first request may take ~1 min to wake
+The whole Compose stack (api + nginx + ui) runs on a single EC2 instance, so the SQLite DB, uploads, and retrained models persist on the instance's EBS volume.
+
+| Piece | Setting |
+|-------|---------|
+| Instance | `c7i-flex.large` (2 vCPU, 4 GB) + 4 GB swap, Amazon Linux 2023 |
+| Disk | 30 GB gp3, encrypted |
+| Network | Default VPC, public IP; security group opens **8000** (API) and **8501** (UI) only — no SSH |
+
+Bootstrap: [`scripts/ec2-user-data.sh`](scripts/ec2-user-data.sh) is passed as EC2 user data. It adds swap, installs Docker + Compose/buildx, clones this repo to `/opt/app`, writes a `docker-compose.override.yml` with `restart: unless-stopped`, then runs `docker compose build && docker compose up -d`. First boot takes ~5 min (TensorFlow image build); log at `/var/log/app-bootstrap.log`.
+
+Run:
+
+```bash
+# shell on the instance (no SSH key needed)
+aws ssm start-session --target <instance-id> --region eu-north-1
+
+# on the instance
+cd /opt/app
+sudo git pull && sudo docker compose up -d --build   # deploy latest code
+sudo docker compose up -d --scale api=2              # scale API replicas behind nginx
+sudo docker compose logs -f api
+```
+
+Notes:
+
+- `/upload` and `/retrain` are unauthenticated and publicly reachable; restrict the security group to known IPs when not demoing.
+- Stop the instance between demos to save cost (~$0.08/hr running); data on the EBS volume is kept, but the public IP changes.
 
 ## API quick reference
 
@@ -138,4 +164,4 @@ From `models/metrics.json` (MobileNetV2, APTOS 224 subset): Accuracy ≈ **0.63*
 - `POST /retrain` — JSON `{ "epochs": 3 }`  
 - `GET /insights` — chart data + interpretations  
 
-Swagger UI: `http://localhost:8000/docs`
+Swagger UI: `http://localhost:8000/docs` (local) · http://51.20.133.231:8000/docs (AWS)
