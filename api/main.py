@@ -22,7 +22,7 @@ from src.db import init_db, list_uploads, save_upload, upload_counts_by_label
 from src.insights import load_insights
 from src.prediction import clear_model_cache, predict_image
 from src.preprocessing import validate_image_bytes
-from src.retrain import run_retrain
+from src.retrain import backup_path, restore_backup, run_retrain
 
 STARTED_AT = datetime.now(timezone.utc)
 app = FastAPI(
@@ -78,6 +78,7 @@ def health():
         "status": "ok",
         "model_loaded": MODEL_PATH.exists(),
         "model_path": str(MODEL_PATH),
+        "backup_available": backup_path().exists(),
         "uptime_seconds": uptime,
         "started_at": STARTED_AT.isoformat(),
         "host": os.uname().nodename if hasattr(os, "uname") else "unknown",
@@ -162,6 +163,15 @@ def retrain(body: RetrainRequest = RetrainRequest()):
         raise HTTPException(500, f"Retrain failed: {exc}") from exc
     clear_model_cache()
     return result
+
+
+@app.post("/reset-model")
+def reset_model():
+    """Undo the last retrain: delete the current model and restore the .h5.bak backup."""
+    try:
+        return restore_backup()
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @app.get("/insights")

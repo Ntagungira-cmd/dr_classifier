@@ -113,6 +113,7 @@ docker compose up -d --scale api=3 nginx
 | Visualizations (≥3 features + story) | UI **Visualizations** — class distribution, brightness, green channel (+ sharpness) |
 | Bulk upload for retrain | UI **Upload data** / `POST /upload` → SQLite |
 | Trigger retrain button | UI **Retrain** / `POST /retrain` (fine-tunes from custom `.h5`) |
+| Undo a bad retrain | UI **Retrain** → *Restore backup model* / `POST /reset-model` |
 | Model uptime | UI header metrics from `GET /health` |
 | Notebook eval ≥4 metrics | `notebook/diabetic_retinopathy.ipynb` |
 | Locust flood + multi-container latency | `locust/` + table below |
@@ -122,6 +123,11 @@ docker compose up -d --scale api=3 nginx
 1. Upload images → saved to SQLite + `data/uploads/`
 2. Preprocess (resize, Gaussian, normalize)
 3. Fine-tune starting from **your** saved MobileNetV2 checkpoint as pretrained weights
+4. Save over `models/diabetic_retinopathy_mobilenet.h5`, keeping the previous model as `diabetic_retinopathy_mobilenet.h5.bak`
+
+If a retrain makes predictions worse, **Restore backup model** in the Retrain tab (`POST /reset-model`) deletes the current `.h5` and renames the `.bak` back to `.h5`. This undoes one retrain; `GET /health` reports `backup_available`. The original trained model can always be restored from git: `git checkout models/diabetic_retinopathy_mobilenet.h5`.
+
+To make a balanced batch of EyePACS images that never touches the test sets: `python scripts/make_retrain_batch.py --per-class 30` (writes `data/retrain_batch/`; add `--upload http://<host>:8000` to send it to the API).
 
 ## Flood request simulation (Locust)
 
@@ -231,6 +237,7 @@ Notes:
 - `POST /predict` — multipart `file`  
 - `POST /upload` — multipart `files` + form `labels` (`0,1,2,...`)  
 - `POST /retrain` — JSON `{ "epochs": 3 }`  
+- `POST /reset-model` — undo the last retrain (restore `.h5.bak`)  
 - `GET /insights` — chart data + interpretations  
 
 Swagger UI: `http://localhost:8000/docs` (local) · http://51.20.133.231:8000/docs (AWS)

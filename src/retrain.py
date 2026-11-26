@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Optional
@@ -166,3 +167,23 @@ def run_retrain(
     except Exception as exc:
         finish_retrain_run(run_id, "failed", json.dumps({"error": str(exc)}))
         raise
+
+
+def backup_path(model_path: Path = MODEL_PATH) -> Path:
+    return model_path.with_suffix(model_path.suffix + ".bak")
+
+
+def restore_backup(model_path: Path = MODEL_PATH) -> dict:
+    """
+    Undo the last retrain: delete the current model and make the .bak the model again.
+
+    run_retrain writes the previous model to <model>.h5.bak before saving, so this
+    goes back one retrain. Afterwards there is no .bak until the next retrain.
+    """
+    bak = backup_path(model_path)
+    if not bak.exists():
+        raise FileNotFoundError(f"No backup model at {bak}; nothing to restore")
+    os.replace(bak, model_path)  # atomic: removes the retrained model, .bak becomes the .h5
+    os.utime(model_path)  # new mtime so every API replica reloads it
+    clear_model_cache()
+    return {"status": "restored", "model_path": str(model_path)}

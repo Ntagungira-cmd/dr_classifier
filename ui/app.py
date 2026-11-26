@@ -195,3 +195,24 @@ with tab_retrain:
                 st.json(result)
             except Exception as exc:
                 st.error(exc)
+
+    st.divider()
+    st.subheader("Undo last retrain")
+    try:
+        has_backup = bool(api_get("/health").get("backup_available"))
+    except Exception:
+        has_backup = False
+    st.write(
+        "Each retrain saves the previous model as a backup (`.h5.bak`). If a retrain made "
+        "predictions worse, this deletes the current model and restores the backup."
+    )
+    if not has_backup:
+        st.info("No backup model available: nothing to undo.")
+    confirm = st.checkbox("Delete the current model and restore the backup", disabled=not has_backup)
+    if st.button("Restore backup model", disabled=not confirm):
+        try:
+            result = api_post("/reset-model", timeout=60)
+            st.success("Backup restored; the API is now serving it.")
+            st.json(result)
+        except Exception as exc:
+            st.error(exc)

@@ -25,3 +25,4 @@ locust_results/
 .mypy_cache/
 render.yaml.bak
 models/experiments/
+models/*.bak
