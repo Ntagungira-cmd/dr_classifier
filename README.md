@@ -6,7 +6,7 @@ Bridges the Intro-to-ML summative (diabetic patient outcomes) into an **image** 
 
 ## Video demo
 
-> YouTube link: _[add after recording — camera on, show predict + retrain]_
+> Demo Video link: _[https://drive.google.com/drive/folders/1PkvMHoH5qhePUfkSB8sru9k679E_dNR8?usp=sharing]_
 
 ## Live URL
 
